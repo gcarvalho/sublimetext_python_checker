@@ -44,7 +44,7 @@ invalid.python_checker.outline: outline around lines with pyflakes flags
 keyword.python_checker.underline: column-specific mark for flags which provide it
 
 An example used with a Solarized theme:
-<pre>
+```xml
     <dict>
         <key>name</key>
         <string>invalid.python_checker.outline</string>
@@ -82,7 +82,7 @@ An example used with a Solarized theme:
             <string>#FF0000</string>
         </dict>
     </dict>
-<pre>
+```
 
 ## Why not sublimelint
 
