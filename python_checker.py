@@ -9,7 +9,7 @@ import sublime_plugin
 try:
     from local_settings import CHECKERS
 except ImportError as e:
-    print '''
+    print ('''
 Please create file local_settings.py in the same directory with
 python_checker.py. Add to local_settings.py list of your checkers.
 
@@ -33,7 +33,7 @@ For example in your project settings, add:
             ["/usr/bin/pyflakes", [] ]
         ]
     }
-'''
+''')
 
 
 global view_messages
@@ -55,7 +55,8 @@ class PythonCheckerCommand(sublime_plugin.EventListener):
         global view_messages
         lineno = view.rowcol(view.sel()[0].end())[0]
         if view.id() in view_messages and lineno in view_messages[view.id()]:
-            view.set_status('python_checker', view_messages[view.id()][lineno])
+            _message = (view_messages[view.id()][lineno]).decode('utf-8')
+            view.set_status('python_checker', _message)
         else:
             view.erase_status('python_checker')
 
@@ -85,19 +86,21 @@ def check_and_mark(view):
             checker_messages += parse_messages(stdout)
             checker_messages += parse_messages(stderr)
             for line in checker_messages:
-                print "[%s] %s:%s:%s %s" % (
+                print ("[%s] %s:%s:%s %s" % (
                     checker.split('/')[-1], view.file_name(),
-                    line['lineno'] + 1, line['col'] + 1, line['text'])
+                    line['lineno'] + 1, line['col'] + 1, line['text']))
             messages += checker_messages
         except OSError:
-            print "Checker could not be found:", checker
+            print ("Checker could not be found:", checker)
+        except Exception as e:
+            print ("Generic error while running checker:", e)
 
     outlines = [view.full_line(view.text_point(m['lineno'], 0))
                 for m in messages]
     view.erase_regions('python_checker_outlines')
     view.add_regions('python_checker_outlines',
         outlines,
-        'keyword',
+        'keyword', flags=
         sublime.DRAW_EMPTY | sublime.DRAW_OUTLINED)
 
     underlines = []
@@ -109,13 +112,13 @@ def check_and_mark(view):
     view.erase_regions('python_checker_underlines')
     view.add_regions('python_checker_underlines',
         underlines,
-        'keyword',
+        'keyword', flags=
         sublime.DRAW_EMPTY_AS_OVERWRITE | sublime.DRAW_OUTLINED)
 
     line_messages = {}
     for m in (m for m in messages if m['text']):
         if m['lineno'] in line_messages:
-            line_messages[m['lineno']] += ';' + m['text']
+            line_messages[m['lineno']] += b';' + m['text']
         else:
             line_messages[m['lineno']] = m['text']
 
@@ -144,8 +147,8 @@ def parse_messages(checker_output):
     c:\Python26\Scripts\pildriver.py:208: 'ImageFilter' imported but unused
     '''
 
-    pep8_re = re.compile(r'.*:(\d+):(\d+):\s+(.*)')
-    pyflakes_re = re.compile(r'.*:(\d+):\s+(.*)')
+    pep8_re = re.compile(b'.*:(\d+):(\d+):\s+(.*)')
+    pyflakes_re = re.compile(b'.*:(\d+):\s+(.*)')
 
     messages = []
     for i, line in enumerate(checker_output.splitlines()):
