@@ -95,13 +95,25 @@ def check_and_mark(view):
         except Exception as e:
             print ("Generic error while running checker:", e)
 
-    outlines = [view.full_line(view.text_point(m['lineno'], 0))
-                for m in messages]
     view.erase_regions('python_checker_outlines')
-    view.add_regions('python_checker_outlines',
+
+    # Separate scopes for pep8 and flakes messages
+    # Will use keyword.python_checker for pep8
+    outlines = [view.full_line(view.text_point(m['lineno'], 0))
+                for m in messages if m['type'] == 'pep8']
+    view.erase_regions('python_checker_outlines_pep8')
+    view.add_regions('python_checker_outlines_pep8',
         outlines,
-        'keyword', flags=
-        sublime.DRAW_EMPTY | sublime.DRAW_OUTLINED)
+        'keyword.python_checker.outline', icon='circle',
+        flags=sublime.DRAW_EMPTY | sublime.DRAW_OUTLINED)
+    # Will use invalid.python_checker for flakes
+    outlines = [view.full_line(view.text_point(m['lineno'], 0))
+                for m in messages if m['type'] == 'flakes']
+    view.erase_regions('python_checker_outlines_flakes')
+    view.add_regions('python_checker_outlines_flakes',
+        outlines,
+        'invalid.python_checker.outline', icon='circle',
+        flags=sublime.DRAW_EMPTY | sublime.DRAW_OUTLINED)
 
     underlines = []
     for m in messages:
@@ -112,7 +124,7 @@ def check_and_mark(view):
     view.erase_regions('python_checker_underlines')
     view.add_regions('python_checker_underlines',
         underlines,
-        'keyword', flags=
+        'keyword.python_checker.underline', flags=
         sublime.DRAW_EMPTY_AS_OVERWRITE | sublime.DRAW_OUTLINED)
 
     line_messages = {}
@@ -153,8 +165,10 @@ def parse_messages(checker_output):
     messages = []
     for i, line in enumerate(checker_output.splitlines()):
         if pep8_re.match(line):
+            mesg_type = 'pep8'
             lineno, col, text = pep8_re.match(line).groups()
         elif pyflakes_re.match(line):
+            mesg_type = 'flakes'
             lineno, text = pyflakes_re.match(line).groups()
             col = 1
             if text == 'invalid syntax':
@@ -163,7 +177,8 @@ def parse_messages(checker_output):
             continue
         messages.append({'lineno': int(lineno) - 1,
                          'col': int(col) - 1,
-                         'text': text})
+                         'text': text,
+                         'type': mesg_type})
 
     return messages
 
