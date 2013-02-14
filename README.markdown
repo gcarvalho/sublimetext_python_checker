@@ -13,11 +13,13 @@ Go to your Packages dir (Sublime Text 2 -> Preferences -> Browse Packages). Clon
 Go to sublimetext_python_checker/ and create file local_settings.py with list of your preferred checkers:
 
 <pre>
-    CHECKERS = [('/Users/vorushin/.virtualenvs/checkers/bin/pep8', []),
-                ('/Users/vorushin/.virtualenvs/checkers/bin/pyflakes', [])]
+    CHECKERS = [('/Users/vorushin/.virtualenvs/checkers/bin/pep8', [], False),
+                ('/Users/vorushin/.virtualenvs/checkers/bin/pyflakes', [], False)]
 </pre>
 
-First parameter is path to command, second - optional list of arguments. If you want to disable line length checking in pep8, set second parameter to ['--ignore=E501'].
+First parameter is path to command.
+Second - optional list of arguments, If you want to disable line length checking in pep8, set second parameter to ['--ignore=E501'].
+third - do you want to run this checker on each change. Only works with pyflakes, ATM.
 
 You can also set syntax checkers using sublimetext settings (per file, global,
 per project, ...):
@@ -27,7 +29,8 @@ per project, ...):
         "python_syntax_checkers":
         [
             ["/usr/bin/pep8", ["--ignore=E501,E128,E221"] ]
-        ]
+        ],
+        false
     }
 </pre>
 Both "CHECKERS local_settings" and sublime text settings will be used,

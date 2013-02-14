@@ -6,6 +6,25 @@ from subprocess import Popen, PIPE
 import sublime
 import sublime_plugin
 
+
+DEFAULT_CHECKERS = [
+        [
+            "/usr/bin/pep8",
+            [
+                "--ignore="
+            ],
+            False,
+            "keyword.python_checker.outline"
+        ],
+        [
+            "/usr/bin/pyflakes",
+            [
+            ],
+            True,
+            "invalid.python_checker.outline"
+        ]
+    ]
+
 try:
     from local_settings import CHECKERS
 except ImportError as e:
@@ -37,7 +56,11 @@ For example in your project settings, add:
 
 
 global view_messages
+global view_lines
+global view_totals
 view_messages = {}
+view_lines = {}
+view_totals = {}
 
 
 class PythonCheckerCommand(sublime_plugin.EventListener):
@@ -45,97 +68,126 @@ class PythonCheckerCommand(sublime_plugin.EventListener):
         signal.signal(signal.SIGALRM, lambda s, f: check_and_mark(view))
         signal.alarm(1)
 
+    def on_modified(self, view):
+        signal.signal(signal.SIGALRM, lambda s, f: check_and_mark(view, True))
+        signal.alarm(1)
+
     def on_deactivated(self, view):
         signal.alarm(0)
 
     def on_post_save(self, view):
-        check_and_mark(view)
+        signal.signal(signal.SIGALRM, lambda s, f: check_and_mark(view))
+        signal.alarm(1)
+
+    def on_close(self, view):
+        global view_messages
+        view_messages[view.id()].clear()
+        del view_messages[view.id()]
+        del view_lines[view.id()]
+        view.erase_status('python_checker')
 
     def on_selection_modified(self, view):
         global view_messages
         lineno = view.rowcol(view.sel()[0].end())[0]
-        if view.id() in view_messages and lineno in view_messages[view.id()]:
-            _message = (view_messages[view.id()][lineno]).decode('utf-8')
-            view.set_status('python_checker', _message)
+        _message = ''
+        if view.id() in view_lines and lineno in view_lines[view.id()]:
+            for basename, basename_lines in view_messages[view.id()].items():
+                if lineno in basename_lines:
+                    _message += (basename_lines[lineno]).decode('utf-8') + ';'
+        if _message or view_totals.get(view.id(), ''):
+            view.set_status('python_checker', '{} ({} )'.format(_message, view_totals.get(view.id(), '')))
         else:
-            view.erase_status('python_checker')
+            view.set_status('python_checker', 'OK')
 
 
-def check_and_mark(view):
+def check_and_mark(view, is_buffer=False):
     if not 'python' in view.settings().get('syntax').lower():
         return
-    if not view.file_name():  # we check files (not buffers)
+    if not view.file_name() and not is_buffer:
         return
 
     checkers = view.settings().get('python_syntax_checkers', [])
+    checkers_basenames = [
+        os.path.basename(checker[0]) for checker in checkers]
 
-    # Append "local_settings.CHECKERS" to checkers from settings
+    # TODO: improve settings and default handling
+    # TODO: just use the checkers in path
     if 'CHECKERS' in globals():
-        checkers_basenames = [
-            os.path.basename(checker[0]) for checker in checkers]
         checkers.extend([checker for checker in CHECKERS
             if os.path.basename(checker[0]) not in checkers_basenames])
-
-    messages = []
-    for checker, args in checkers:
-        checker_messages = []
-        try:
-            p = Popen([checker, view.file_name()] + args, stdout=PIPE,
-                stderr=PIPE)
-            stdout, stderr = p.communicate(None)
-            checker_messages += parse_messages(stdout)
-            checker_messages += parse_messages(stderr)
-            for line in checker_messages:
-                print ("[%s] %s:%s:%s %s" % (
-                    checker.split('/')[-1], view.file_name(),
-                    line['lineno'] + 1, line['col'] + 1, line['text']))
-            messages += checker_messages
-        except OSError:
-            print ("Checker could not be found:", checker)
-        except Exception as e:
-            print ("Generic error while running checker:", e)
-
-    view.erase_regions('python_checker_outlines')
-
-    # Separate scopes for pep8 and flakes messages
-    # Will use keyword.python_checker for pep8
-    outlines = [view.full_line(view.text_point(m['lineno'], 0))
-                for m in messages if m['type'] == 'pep8']
-    view.erase_regions('python_checker_outlines_pep8')
-    view.add_regions('python_checker_outlines_pep8',
-        outlines,
-        'keyword.python_checker.outline', icon='circle',
-        flags=sublime.DRAW_EMPTY | sublime.DRAW_OUTLINED)
-    # Will use invalid.python_checker for flakes
-    outlines = [view.full_line(view.text_point(m['lineno'], 0))
-                for m in messages if m['type'] == 'flakes']
-    view.erase_regions('python_checker_outlines_flakes')
-    view.add_regions('python_checker_outlines_flakes',
-        outlines,
-        'invalid.python_checker.outline', icon='circle',
-        flags=sublime.DRAW_EMPTY | sublime.DRAW_OUTLINED)
-
-    underlines = []
-    for m in messages:
-        if m['col']:
-            a = view.text_point(m['lineno'], m['col'])
-            underlines.append(sublime.Region(a, a))
-
-    view.erase_regions('python_checker_underlines')
-    view.add_regions('python_checker_underlines',
-        underlines,
-        'keyword.python_checker.underline', flags=
-        sublime.DRAW_EMPTY_AS_OVERWRITE | sublime.DRAW_OUTLINED)
+    checkers_basenames = [
+        os.path.basename(checker[0]) for checker in checkers]
+    checkers.extend([checker for checker in DEFAULT_CHECKERS
+            if os.path.basename(checker[0]) not in checkers_basenames])
 
     line_messages = {}
-    for m in (m for m in messages if m['text']):
-        if m['lineno'] in line_messages:
-            line_messages[m['lineno']] += b';' + m['text']
-        else:
-            line_messages[m['lineno']] = m['text']
+    for checker, args, run_in_buffer, checker_scope in checkers:
+        checker_messages = []
+        line_messages = {}
+        if not is_buffer or is_buffer and run_in_buffer:
+            try:
+                if not is_buffer:
+                    p = Popen([checker, view.file_name()] + args, stdout=PIPE,
+                    stderr=PIPE)
+                    stdout, stderr = p.communicate(None)
+                else:
+                    p = Popen([checker] + args, stdin=PIPE, stdout=PIPE,
+                    stderr=PIPE)
+                    stdout, stderr = p.communicate(bytes(view.substr(sublime.Region(0, view.size())), 'utf-8'))
+                checker_messages += parse_messages(stdout)
+                checker_messages += parse_messages(stderr)
+            except OSError:
+                print ("Checker could not be found:", checker)
+            except Exception as e:
+                print ("Generic error while running checker:", e)
+            else:
+                basename = os.path.basename(checker)
+                outline_name = 'python_checker_outlines_{}'.format(basename)
+                print("outline name {}".format(outline_name))
+                underline_name = 'python_checker_underlines_{}'.format(basename)
+                outline_scope = checker_scope
+                outlines = []
+                underlines = []
+                for m in checker_messages:
+                    print ("[%s] %s:%s:%s %s" % (
+                        checker.split('/')[-1], view.file_name(),
+                        m['lineno'] + 1, m['col'] + 1, m['text']))
+                    outlines.append(view.full_line(view.text_point(m['lineno'], 0)))
+                    if m['col']:
+                        a = view.text_point(m['lineno'], m['col'])
+                        underlines.append(sublime.Region(a, a))
+                    if m['text']:
+                        if m['lineno'] in line_messages:
+                            line_messages[m['lineno']] += b';' + m['text']
+                        else:
+                            line_messages[m['lineno']] = m['text']
+                view.erase_regions(outline_name)
+                view.add_regions(outline_name, outlines, outline_scope,
+                    icon='circle',
+                    flags=sublime.DRAW_EMPTY | sublime.DRAW_OUTLINED)
+                view.erase_regions(underline_name)
+                view.add_regions(underline_name, underlines,
+                    'keyword.python_checker.underline', flags=
+                    sublime.DRAW_EMPTY_AS_OVERWRITE | sublime.DRAW_OUTLINED)
+                checker_messages.clear()
+                add_messages(view.id(), basename, line_messages)
 
+
+def add_messages(view_id, basename, basename_lines):
     global view_messages
-    view_messages[view.id()] = line_messages
+    global view_lines
+    global view_totals
+    if view_id not in view_messages:
+        view_messages[view_id] = {}
+    view_messages[view_id][basename] = basename_lines
+    lines = set()
+    view_totals[view_id] = ''
+    for basename, basename_lines in view_messages[view_id].items():
+        lines.update(basename_lines.keys())
+        if basename_lines.keys():
+            view_totals[view_id] += ' {}:{}'.format(basename, len(basename_lines.keys()))
+
+    view_lines[view_id] = lines
 
 
 def parse_messages(checker_output):
@@ -165,10 +217,8 @@ def parse_messages(checker_output):
     messages = []
     for i, line in enumerate(checker_output.splitlines()):
         if pep8_re.match(line):
-            mesg_type = 'pep8'
             lineno, col, text = pep8_re.match(line).groups()
         elif pyflakes_re.match(line):
-            mesg_type = 'flakes'
             lineno, text = pyflakes_re.match(line).groups()
             col = 1
             if text == 'invalid syntax':
@@ -178,7 +228,7 @@ def parse_messages(checker_output):
         messages.append({'lineno': int(lineno) - 1,
                          'col': int(col) - 1,
                          'text': text,
-                         'type': mesg_type})
+                         })
 
     return messages
 
