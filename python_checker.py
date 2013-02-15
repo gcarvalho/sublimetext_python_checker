@@ -1,6 +1,5 @@
 import os
 import re
-import signal
 from subprocess import Popen, PIPE
 
 import sublime
@@ -64,20 +63,14 @@ view_totals = {}
 
 
 class PythonCheckerCommand(sublime_plugin.EventListener):
-    def on_activated(self, view):
-        signal.signal(signal.SIGALRM, lambda s, f: check_and_mark(view))
-        signal.alarm(1)
+    def on_activated_async(self, view):
+        check_and_mark(view)
 
-    def on_modified(self, view):
-        signal.signal(signal.SIGALRM, lambda s, f: check_and_mark(view, True))
-        signal.alarm(1)
+    def on_modified_async(self, view):
+        check_and_mark(view, True)
 
-    def on_deactivated(self, view):
-        signal.alarm(0)
-
-    def on_post_save(self, view):
-        signal.signal(signal.SIGALRM, lambda s, f: check_and_mark(view))
-        signal.alarm(1)
+    def on_post_save_async(self, view):
+        check_and_mark(view)
 
     def on_close(self, view):
         global view_messages
