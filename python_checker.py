@@ -136,15 +136,14 @@ def check_and_mark(view, is_buffer=False):
             else:
                 basename = os.path.basename(checker)
                 outline_name = 'python_checker_outlines_{}'.format(basename)
-                print("outline name {}".format(outline_name))
                 underline_name = 'python_checker_underlines_{}'.format(basename)
                 outline_scope = checker_scope
                 outlines = []
                 underlines = []
                 for m in checker_messages:
-                    print ("[%s] %s:%s:%s %s" % (
-                        checker.split('/')[-1], view.file_name(),
-                        m['lineno'] + 1, m['col'] + 1, m['text']))
+                    # print ("[%s] %s:%s:%s %s" % (
+                    #     checker.split('/')[-1], view.file_name(),
+                    #     m['lineno'] + 1, m['col'] + 1, m['text']))
                     outlines.append(view.full_line(view.text_point(m['lineno'], 0)))
                     if m['col']:
                         a = view.text_point(m['lineno'], m['col'])
@@ -180,6 +179,7 @@ def add_messages(view_id, basename, basename_lines):
         if basename_lines.keys():
             view_totals[view_id] += ' {}:{}'.format(basename, len(basename_lines.keys()))
 
+    print (view_totals[view_id])
     view_lines[view_id] = lines
 
 
