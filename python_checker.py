@@ -21,7 +21,17 @@ DEFAULT_CHECKERS = [
             ],
             True,
             "invalid.python_checker.outline"
-        ]
+        ],
+        [
+            "/usr/local/bin/pylint",
+            [
+                "-fparseable",
+                "-iy",
+                "-d C0301,C0302,C0111,C0103,R0911,R0912,R0913,R0914,R0915,W0142"
+            ],
+            False,
+            "comment.python_checker.outline"
+        ],
     ]
 
 try:
@@ -54,51 +64,52 @@ For example in your project settings, add:
 ''')
 
 
-global view_messages
-global view_lines
-global view_totals
-view_messages = {}
-view_lines = {}
-view_totals = {}
+VIEW_MESSAGES = {}
+VIEW_LINES = {}
+VIEW_TOTALS = {}
 
 
 class PythonCheckerCommand(sublime_plugin.EventListener):
     def on_activated_async(self, view):
-        check_and_mark(view)
+        if view.id() not in VIEW_LINES:  # TODO use change_count()
+            check_and_mark(view)
 
     def on_modified_async(self, view):
+        if view.id() in VIEW_LINES:
+            del VIEW_LINES[view.id()]
         check_and_mark(view, True)
 
     def on_post_save_async(self, view):
         check_and_mark(view)
 
     def on_close(self, view):
-        global view_messages
-        view_messages[view.id()].clear()
-        del view_messages[view.id()]
-        del view_lines[view.id()]
+        if view.id() in VIEW_MESSAGES:
+            VIEW_MESSAGES[view.id()].clear()
+            del VIEW_MESSAGES[view.id()]
+            del VIEW_LINES[view.id()]
         view.erase_status('python_checker')
 
     def on_selection_modified(self, view):
-        global view_messages
-        lineno = view.rowcol(view.sel()[0].end())[0]
+        lineno = view.rowcol(view.sel()[0].begin())[0]
         _message = ''
-        if view.id() in view_lines and lineno in view_lines[view.id()]:
-            for basename, basename_lines in view_messages[view.id()].items():
+        if view.id() in VIEW_LINES and lineno in VIEW_LINES[view.id()]:
+            for _, basename_lines in VIEW_MESSAGES[view.id()].items():
                 if lineno in basename_lines:
                     _message += (basename_lines[lineno]).decode('utf-8') + ';'
-        if _message or view_totals.get(view.id(), ''):
-            view.set_status('python_checker', '{} ({} )'.format(_message, view_totals.get(view.id(), '')))
+        if _message or VIEW_TOTALS.get(view.id(), ''):
+            view.set_status('python_checker', '{} ({} )'.format(_message, VIEW_TOTALS.get(view.id(), '')))
         else:
             view.set_status('python_checker', 'OK')
 
 
 def check_and_mark(view, is_buffer=False):
-    if not 'python' in view.settings().get('syntax').lower():
+    if view.settings().get('syntax', None) and \
+        not 'python' in view.settings().get('syntax', '').lower():
         return
     if not view.file_name() and not is_buffer:
         return
-
+    mesg_quick = '' if is_buffer else '(everything)'
+    view.set_status('python_checker_running', 'Checking Python {}...'.format(mesg_quick))
     checkers = view.settings().get('python_syntax_checkers', [])
     checkers_basenames = [
         os.path.basename(checker[0]) for checker in checkers]
@@ -120,8 +131,11 @@ def check_and_mark(view, is_buffer=False):
         if not is_buffer or is_buffer and run_in_buffer:
             try:
                 if not is_buffer:
-                    p = Popen([checker, view.file_name()] + args, stdout=PIPE,
-                    stderr=PIPE)
+                    params = [checker, view.file_name()]
+                    for arg in args:
+                        params.insert(1, arg)
+                    p = Popen(params, stdout=PIPE,
+                        stderr=PIPE)
                     stdout, stderr = p.communicate(None)
                 else:
                     p = Popen([checker] + args, stdin=PIPE, stdout=PIPE,
@@ -163,24 +177,24 @@ def check_and_mark(view, is_buffer=False):
                     sublime.DRAW_EMPTY_AS_OVERWRITE | sublime.DRAW_OUTLINED)
                 checker_messages.clear()
                 add_messages(view.id(), basename, line_messages)
+    view.erase_status('python_checker_running')
 
 
 def add_messages(view_id, basename, basename_lines):
-    global view_messages
-    global view_lines
-    global view_totals
-    if view_id not in view_messages:
-        view_messages[view_id] = {}
-    view_messages[view_id][basename] = basename_lines
+    if view_id not in VIEW_MESSAGES:
+        VIEW_MESSAGES[view_id] = {}
+    VIEW_MESSAGES[view_id][basename] = basename_lines
     lines = set()
-    view_totals[view_id] = ''
-    for basename, basename_lines in view_messages[view_id].items():
+    VIEW_TOTALS[view_id] = ''
+    for basename, basename_lines in VIEW_MESSAGES[view_id].items():
         lines.update(basename_lines.keys())
         if basename_lines.keys():
-            view_totals[view_id] += ' {}:{}'.format(basename, len(basename_lines.keys()))
+            VIEW_TOTALS[view_id] += ' {}:{}'.format(basename, len(basename_lines.keys()))
 
-    print (view_totals[view_id])
-    view_lines[view_id] = lines
+    if lines:
+        VIEW_LINES[view_id] = lines
+    else:
+        VIEW_LINES[view_id] = 'OK'
 
 
 def parse_messages(checker_output):
