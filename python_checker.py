@@ -193,8 +193,6 @@ def add_messages(view_id, basename, basename_lines):
 
     if lines:
         VIEW_LINES[view_id] = lines
-    else:
-        VIEW_LINES[view_id] = 'OK'
 
 
 def parse_messages(checker_output):
